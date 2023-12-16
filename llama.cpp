@@ -1806,6 +1806,7 @@ static const char * llama_file_version_name(llama_fver version) {
 }
 
 static std::string llama_format_tensor_shape(const std::vector<int64_t> & ne) {
+    LLAMA_LOG_INFO("%s: formatting tensor shape.\n",__func__);
     char buf[256];
     snprintf(buf, sizeof(buf), "%5" PRId64, ne.at(0));
     for (size_t i = 1; i < ne.size(); i++) {
@@ -2217,11 +2218,14 @@ struct llama_model_loader {
     }
 
     struct ggml_tensor * create_tensor_for(struct ggml_context * ctx, struct ggml_tensor * meta, ggml_backend_type backend) {
+        LLAMA_LOG_INFO("%s: creating tensor.",__func__);
         if (backend != GGML_BACKEND_CPU) {
+            LLAMA_LOG_INFO("%s: backend is not cpu.",__func__);
             ggml_set_no_alloc(ctx, true);
         }
 
         struct ggml_tensor * tensor = ggml_dup_tensor(ctx, meta);
+        LLAMA_LOG_INFO("%s: duplicated tensor.",__func__);
         tensor->backend = backend; // TODO: ggml_set_backend
         ggml_set_name(tensor, ggml_get_name(meta));
 
@@ -2235,9 +2239,12 @@ struct llama_model_loader {
     }
 
     struct ggml_tensor * create_tensor(struct ggml_context * ctx, const std::string & name, const std::vector<int64_t> & ne, ggml_backend_type backend, bool required = true) {
+        LLAMA_LOG_INFO("%s: get tensor.",__func__);
         struct ggml_tensor * cur = ggml_get_tensor(ctx_meta, name.c_str());
+        LLAMA_LOG_INFO("%s: got tensor.",__func__);
 
         if (cur == NULL) {
+            LLAMA_LOG_INFO("%s: cur is null.",__func__);
             if (!required) {
                 return NULL;
             }
@@ -2245,6 +2252,7 @@ struct llama_model_loader {
         }
 
         if (backend == GGML_BACKEND_GPU_SPLIT) {
+            LLAMA_LOG_INFO("%s: ggml backend gpu is split.",__func__);
             if (ne.size() == 1) {
                 throw std::runtime_error(format("%s: 1-dimensional tensor '%s' cannot be split on the GPU", __func__, name.c_str()));
             }
@@ -2254,11 +2262,14 @@ struct llama_model_loader {
             bool is_ok = true;
             for (size_t i = 0; i < ne.size(); ++i) {
                 if (ne[i] != cur->ne[i]) {
+                    LLAMA_LOG_WARN("%s: ne[i]=%lld and cur->ne[i]=%lld\n", __func__, ne[i], cur->ne[i]);
                     is_ok = false;
                     break;
                 }
             }
+            LLAMA_LOG_INFO("%s: first loop done.\n",__func__);
             if (!is_ok) {
+                LLAMA_LOG_INFO("%s: I'm not ok\n",__func__);
                 throw std::runtime_error(
                         format("%s: tensor '%s' has wrong shape; expected %s, got %s",
                             __func__, name.c_str(),
@@ -2266,6 +2277,7 @@ struct llama_model_loader {
                             llama_format_tensor_shape(cur).c_str()));
             }
         }
+        LLAMA_LOG_INFO("%s: about to create tensor for...\n",__func__);
 
         return create_tensor_for(ctx, cur, backend);
     }
@@ -2963,9 +2975,13 @@ static void llm_load_tensors(
     // create the ggml context
     {
         model.buf.resize(ctx_size);
+        LLAMA_LOG_INFO("%s: resized log\n",__func__);
         if (use_mlock) {
+            LLAMA_LOG_INFO("%s: using mlock\n",__func__);
             model.mlock_buf.init   (model.buf.data);
+            LLAMA_LOG_INFO("%s: init done\n",__func__);
             model.mlock_buf.grow_to(model.buf.size);
+            LLAMA_LOG_INFO("%s: growing done\n",__func__);
         }
 
         struct ggml_init_params params = {
@@ -2973,8 +2989,10 @@ static void llm_load_tensors(
             /*.mem_buffer =*/ model.buf.data,
             /*.no_alloc   =*/ ml.use_mmap,
         };
+        LLAMA_LOG_INFO("%s: params struct created\n", __func__);
 
         model.ctx = ggml_init(params);
+        LLAMA_LOG_INFO("%s: ggml init done\n",__func__);
         if (!model.ctx) {
             throw std::runtime_error(format("ggml_init() failed"));
         }
@@ -3012,8 +3030,9 @@ static void llm_load_tensors(
             case LLM_ARCH_LLAMA:
             case LLM_ARCH_REFACT:
                 {
+                    LLAMA_LOG_INFO("%s: arch refact\n",__func__);
                     model.tok_embd = ml.create_tensor(ctx, tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, GGML_BACKEND_CPU);
-
+                    LLAMA_LOG_INFO("%s: created tensor.",__func__);
                     // output
                     {
                         ggml_backend_type backend_norm;
@@ -3023,6 +3042,7 @@ static void llm_load_tensors(
                             backend_norm   = llama_backend_offload;
                             backend_output = llama_backend_offload_split;
                         } else {
+                            LLAMA_LOG_INFO("%s: ggml backend cpu.",__func__);
                             backend_norm   = GGML_BACKEND_CPU;
                             backend_output = GGML_BACKEND_CPU;
                         }
@@ -3111,6 +3131,7 @@ static void llm_load_tensors(
                 } break;
             case LLM_ARCH_BAICHUAN:
                 {
+                    LLAMA_LOG_INFO("%s: arch_baichuan\n",__func__);
                     model.tok_embd = ml.create_tensor(ctx, tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, GGML_BACKEND_CPU);
                     {
                         ggml_backend_type backend_norm;
@@ -3170,6 +3191,7 @@ static void llm_load_tensors(
                 } break;
             case LLM_ARCH_FALCON:
                 {
+                    LLAMA_LOG_INFO("%s: arch_falcon\n",__func__);
                     // TODO: CPU-only for now
 
                     model.tok_embd = ml.create_tensor(ctx, tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, GGML_BACKEND_CPU);
@@ -3241,6 +3263,7 @@ static void llm_load_tensors(
                 } break;
             case LLM_ARCH_STARCODER:
                 {
+                    LLAMA_LOG_INFO("%s: arch starcoder\n",__func__);
                     model.tok_embd = ml.create_tensor(ctx, tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab},             GGML_BACKEND_CPU);
                     model.pos_embd = ml.create_tensor(ctx, tn(LLM_TENSOR_POS_EMBD, "weight"),   {n_embd, hparams.n_ctx_train}, GGML_BACKEND_CPU);
 
@@ -3313,6 +3336,7 @@ static void llm_load_tensors(
                 } break;
             case LLM_ARCH_PERSIMMON:
                 {
+                    LLAMA_LOG_INFO("%s: arch persimmon\n",__func__);
                     model.tok_embd = ml.create_tensor(ctx, tn(LLM_TENSOR_TOKEN_EMBD, "weight"),  {n_embd, n_vocab}, GGML_BACKEND_CPU);
 
                     {
@@ -3367,6 +3391,7 @@ static void llm_load_tensors(
                 } break;
             case LLM_ARCH_BLOOM:
                 {
+                    LLAMA_LOG_INFO("%s: arch bloom\n",__func__);
                     // TODO: CPU-only for now
 
                     model.tok_embd   = ml.create_tensor(ctx, tn(LLM_TENSOR_TOKEN_EMBD,      "weight"), {n_embd, n_vocab}, GGML_BACKEND_CPU);
@@ -3442,6 +3467,7 @@ static void llm_load_tensors(
                 } break;
             case LLM_ARCH_MPT:
                 {
+                    LLAMA_LOG_INFO("%s: arch mpt\n",__func__);
                     model.tok_embd = ml.create_tensor(ctx, tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, GGML_BACKEND_CPU);
 
                     // output
@@ -3502,6 +3528,7 @@ static void llm_load_tensors(
                 } break;
             case LLM_ARCH_STABLELM:
                 {
+                    LLAMA_LOG_INFO("%s: arch stablelm\n",__func__);
                     model.tok_embd = ml.create_tensor(ctx, tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, GGML_BACKEND_CPU);
 
                     // output
@@ -3569,6 +3596,7 @@ static void llm_load_tensors(
                 } break;
             case LLM_ARCH_QWEN:
                 {
+                    LLAMA_LOG_INFO("%s: arch qwen\n",__func__);
                     model.tok_embd = ml.create_tensor(ctx, tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, GGML_BACKEND_CPU);
                     {
                         ggml_backend_type backend_norm;
